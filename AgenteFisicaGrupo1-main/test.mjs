@@ -1,0 +1,1 @@
+import { app } from 'electron'; console.log('APP:', typeof app); process.exit(0);

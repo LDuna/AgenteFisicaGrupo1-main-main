@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tutor de Física - Gemini & Desmos</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="node_modules/katex/dist/katex.min.css">
+  <script src="node_modules/katex/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+  <script src="https://unpkg.com/function-plot@1/dist/function-plot.js"></script>
+</head>
+<body>
+  <div class="app-container panel-collapsed">
+    <div class="chat-panel">
+      <div class="chat-header">
+        <h1>Tutor de Física</h1>
+        <p>Potenciado por Gemini AI</p>
+      </div>
+      <div class="chat-history" id="chat-history">
+        <div class="message ai-message">
+          <div class="bubble">
+            ¡Hola! Soy tu tutor experto en Física I. Pregúntame sobre cinemática, dinámica o cualquier otro concepto que necesites comprender o calcular.
+          </div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <textarea id="message-input" placeholder="Escribe tu problema de física aquí..."></textarea>
+        <button id="send-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </div>
+    </div>
+    <div class="resizer" id="resizer"></div>
+    <div class="graph-panel">
+      <!-- Pestañas laterales (estilo fichero) -->
+      <div class="fichero-tabs">
+        <button class="fichero-tab" id="tab-plots" title="Gráficos">
+          <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <path d="M3 3v18h18"/>
+            <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+          </svg>
+          <span class="tab-text">Gráficos</span>
+        </button>
+        <button class="fichero-tab" id="tab-dcl" title="Diagramas DCL">
+          <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+          <span class="tab-text">Diagramas DCL</span>
+        </button>
+      </div>
+
+      <!-- Contenedor del contenido del panel -->
+      <div class="graph-content">
+        <div id="plot-wrapper" style="width: 100%; height: 100%; display:flex; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <div style="display:flex; flex-direction:column;">
+              <div id="plot-title" style="font-weight:600; font-size:16px;">Sin gráfico seleccionado</div>
+              <div id="plot-desc" style="font-size:12px; color:#8c9eff;">Aquí se mostrará la descripción del gráfico actual.</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button id="prev-plot">◀</button>
+              <select id="plot-list" style="min-width:220px;"></select>
+              <button id="next-plot">▶</button>
+            </div>
+          </div>
+
+          <div id="plot-container" style="flex:1; min-height:220px; border-radius:8px; background:transparent; display:flex; align-items:center; justify-content:center;">
+            <div id="plot-canvas" style="width:100%; height:100%;"></div>
+            <div id="plot-placeholder" style="position:absolute; color:#8c9eff;">Los gráficos generados por el Tutor aparecerán aquí.</div>
+          </div>
+        </div>
+
+        <div id="dcl-wrapper" style="width: 100%; height: 100%; display:none; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <div style="display:flex; flex-direction:column;">
+              <div id="dcl-title" style="font-weight:600; font-size:16px;">Sin diagrama seleccionado</div>
+              <div id="dcl-desc" style="font-size:12px; color:#8c9eff;">Aquí se mostrará la descripción del diagrama DCL actual.</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button id="prev-dcl">◀</button>
+              <select id="dcl-list" style="min-width:220px;"></select>
+              <button id="next-dcl">▶</button>
+            </div>
+          </div>
+
+          <div id="dcl-container" style="flex:1; min-height:220px; border-radius:8px; background:transparent; display:flex; align-items:center; justify-content:center; position:relative;">
+            <div id="dcl-canvas" style="width:100%; height:100%;"></div>
+            <div id="dcl-placeholder" style="position:absolute; color:#8c9eff;">Los diagramas DCL generados por el Tutor aparecerán aquí.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

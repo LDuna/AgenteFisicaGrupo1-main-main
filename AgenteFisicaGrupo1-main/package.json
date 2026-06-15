@@ -1,0 +1,19 @@
+{
+  "name": "fisica-agente-antigravity",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google/genai": "^1.48.0",
+    "dotenv": "^17.4.1",
+    "electron": "^41.1.1",
+    "katex": "^0.16.45"
+  }
+}
