@@ -89,6 +89,11 @@ Regla de Diagramas DCL (Para Visualización de Cuerpo Libre / DCL):
 * La aplicación posee un renderizador SVG genérico y flexible en el panel derecho (pestaña "Diagramas DCL").
 * Si el problema requiere analizar fuerzas (DCL), diagramas físicos, poleas, o la trayectoria de una partícula (como un cono, un péndulo, un embudo, caída libre, etc.), DEBES construir un JSON de dibujo DCL.
 * IMPORTANTE (Coordenadas en Movimiento Circular): Cuando el problema involucre movimiento circular, giros, péndulos o trayectorias curvas, DEBES estructurar el DCL utilizando coordenadas polares (eje radial \hat{r} y transversal \hat{\theta}) o intrínsecas (eje tangencial \hat{t} y normal \hat{n} apuntando hacia el centro de curvatura). Rotula las fuerzas utilizando estas componentes (ej. F_n, F_t, F_r, F_\theta) en lugar de cartesianas (F_x, F_y). Ilustra claramente los vectores de ejes correspondientes y la aceleración centrípeta si corresponde.
+* CRÍTICO (Sistema de Coordenadas SVG - Eje Y Invertido): El renderizador usa coordenadas SVG donde el origen (0,0) está en la ESQUINA SUPERIOR IZQUIERDA. Esto significa que el eje Y CRECE HACIA ABAJO en la pantalla. Por lo tanto:
+  - Para dibujar una fuerza que apunte HACIA ABAJO en la realidad (como el peso mg o la gravedad), el arrow DEBE tener y2 > y1 (ej. y1=200, y2=280).
+  - Para dibujar una fuerza que apunte HACIA ARRIBA en la realidad (como la Normal N, el empuje de hélices, tensión hacia arriba, etc.), el arrow DEBE tener y2 < y1 (ej. y1=200, y2=120).
+  - Para fuerzas hacia la DERECHA: x2 > x1. Para fuerzas hacia la IZQUIERDA: x2 < x1.
+  - NUNCA inviertas este criterio. El peso SIEMPRE apunta hacia abajo (y2 > y1) y las fuerzas de sustentación/empuje SIEMPRE apuntan hacia arriba (y2 < y1).
 * Para hacerlo, incluye en tu respuesta un bloque de código estrictamente JSON delimitado por \`\`\`dca y \`\`\`.
 * El objeto JSON debe tener:
   - "title": Título breve del diagrama.
@@ -101,8 +106,8 @@ Regla de Diagramas DCL (Para Visualización de Cuerpo Libre / DCL):
     4) {"type": "polygon", "points": "x1,y1 x2,y2 x3,y3", "fill": "#color", "stroke": "#color"} (para planos inclinados, conos o embudos)
     5) {"type": "path", "d": "M...", "fill": "#color", "stroke": "#color", "strokeWidth": n, "dashed": true/false, "dotted": true/false} (para trayectorias curvas)
     6) {"type": "text", "x": n, "y": n, "text": "texto", "color": "#color", "fontSize": n, "fontWeight": "bold"} (para etiquetas)
-    7) {"type": "arrow", "x1": n, "y1": n, "x2": n, "y2": n, "color": "#color", "label": "mg", "strokeWidth": n} (para vectores de fuerza. Automáticamente dibuja la punta de flecha en el extremo y coloca la etiqueta al final)
-* Ejemplo para un bloque deslizándose en un plano inclinado con su trayectoria punteada:
+    7) {"type": "arrow", "x1": n, "y1": n, "x2": n, "y2": n, "color": "#color", "label": "mg", "strokeWidth": n} (para vectores de fuerza. Automáticamente dibuja la punta de flecha en (x2,y2) y coloca la etiqueta al final. RECUERDA: y2 > y1 = flecha hacia ABAJO en pantalla, y2 < y1 = flecha hacia ARRIBA en pantalla)
+* Ejemplo para un bloque deslizándose en un plano inclinado con su trayectoria punteada (OBSERVA cómo mg tiene y2=280 > y1=200, es decir apunta hacia ABAJO, y N tiene y2=110 < y1=200, es decir apunta hacia ARRIBA):
 \`\`\`dca
 {
   "title": "DCL: Bloque en plano inclinado",
@@ -122,7 +127,51 @@ Regla de Diagramas DCL (Para Visualización de Cuerpo Libre / DCL):
 \`\`\`
 * Utiliza este formato genérico para modelar con precisión los diagramas (por ejemplo, dibujando un embudo con líneas/polígonos si el problema es un cono o embudo, o un círculo con fuerzas radiales para la rotación). Solo incluye un bloque \`\`\`dca por respuesta cuando sea pertinente.`;
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); // Usa process.env para mayor seguridad o quémala aquí si es uso privado puro.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// Lista de modelos de respaldo en orden de preferencia.
+// Si el primero falla con 503/429, se prueba el siguiente.
+const FALLBACK_MODELS = [
+  'gemini-flash-latest',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash-lite'
+];
+let currentModelIndex = 0; // Índice del modelo actualmente en uso
+let chatSessionModel = null; // Modelo con el que se creó la sesión actual
+let savedChatHistory = []; // Historial persistente entre recreaciones de sesión
+
+function getCurrentModel() {
+  return FALLBACK_MODELS[currentModelIndex];
+}
+
+function saveHistoryFromSession() {
+  if (chatSession) {
+    try {
+      savedChatHistory = chatSession.getHistory();
+      console.log(`  >> Historial guardado (${savedChatHistory.length} turnos)`);
+    } catch (e) {
+      console.log('  >> No se pudo obtener historial:', e.message);
+    }
+  }
+}
+
+function switchToNextModel() {
+  if (currentModelIndex < FALLBACK_MODELS.length - 1) {
+    currentModelIndex++;
+    console.log(`  >> Cambiando al modelo de respaldo: ${getCurrentModel()}`);
+    // Guardar historial antes de invalidar la sesión
+    saveHistoryFromSession();
+    chatSession = null;
+    chatSessionModel = null;
+    return true;
+  }
+  return false;
+}
+
+function resetModelIndex() {
+  currentModelIndex = 0;
+}
 
 let mainWindow;
 
@@ -254,20 +303,53 @@ Presta muchísima atención al siguiente mensaje del usuario: "${texto}"
 Analiza el tema físico de la pregunta o ejercicio y compáralo con las abreviaturas. ¿Cuál de los documentos mencionados es el MÁS indispensable y probable que contenga la teoría o fórmulas necesarias para ese tema en particular?
 Responde ÚNICAMENTE con el nombre exacto del archivo (ej. ${pdfNames[0]}), o "NINGUNO" si es solo un simple saludo, charla casual, o si la pregunta no amerita buscar guías.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest', // Usamos el modelo flash-latest para evitar errores de cuota o de versión
-      contents: routerPrompt,
-      config: { temperature: 0.0 }
-    });
+  // Intentar con cada modelo de respaldo
+  for (let mi = currentModelIndex; mi < FALLBACK_MODELS.length; mi++) {
+    const modelToTry = FALLBACK_MODELS[mi];
+    let retries = 3;
+    let delay = 3000;
+    while (retries > 0) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelToTry,
+          contents: routerPrompt,
+          config: { temperature: 0.0 }
+        });
 
-    const docName = response.text.trim();
-    for (const name of pdfNames) {
-      if (docName.includes(name)) return name;
+        const docName = response.text.trim();
+        // Si funcionó con un modelo diferente al actual, actualizar el índice
+        if (mi !== currentModelIndex) {
+          currentModelIndex = mi;
+          // Guardar historial y marcar sesión para recreación (no perder memoria)
+          saveHistoryFromSession();
+          chatSession = null;
+          chatSessionModel = null;
+          console.log(`  >> Router: modelo ${modelToTry} funcionó. Actualizando modelo principal.`);
+        }
+        for (const name of pdfNames) {
+          if (docName.includes(name)) return name;
+        }
+        return "NINGUNO";
+      } catch (e) {
+        const errMsg = e.message ? e.message.toLowerCase() : "";
+        const isTransient = errMsg.includes('503') || errMsg.includes('429') || errMsg.includes('high demand') || errMsg.includes('unavailable') || errMsg.includes('quota');
+        if (isTransient) {
+          retries--;
+          if (retries > 0) {
+            console.log(`  > Router (${modelToTry}): error transitorio. Reintentando en ${delay/1000}s... (${retries} intentos restantes)`);
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+          } else {
+            console.log(`  > Router: modelo ${modelToTry} saturado. Probando siguiente modelo...`);
+          }
+        } else {
+          console.log("El router tuvo un problema no transitorio:", e.message);
+          return "NINGUNO";
+        }
+      }
     }
-  } catch (e) {
-    console.log("El router tuvo un problema temporal:", e.message);
   }
+  console.log("El router no pudo conectarse con ningún modelo de respaldo.");
   return "NINGUNO";
 }
 
@@ -279,16 +361,27 @@ ipcMain.handle('chat:send', async (event, text) => {
       await uploadPromise;
     }
 
-    // 2. Inicializamos la sesión si es el primer mensaje
-    if (!chatSession) {
-      console.log(`\n=== ETAPA 2: CHAT INIT ===`);
+    // 2. Inicializamos la sesión si es el primer mensaje (o si se cambió de modelo)
+    function createChatSession() {
+      // Guardar historial de la sesión anterior si existe
+      if (chatSession) {
+        saveHistoryFromSession();
+      }
+      const model = getCurrentModel();
+      console.log(`\n=== ETAPA 2: CHAT INIT (modelo: ${model}, historial: ${savedChatHistory.length} turnos) ===`);
       chatSession = ai.chats.create({
-        model: 'gemini-flash-latest',
+        model: model,
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.3
-        }
+        },
+        history: savedChatHistory
       });
+      chatSessionModel = model;
+    }
+    // Recrear si no existe o si el modelo cambió
+    if (!chatSession || chatSessionModel !== getCurrentModel()) {
+      createChatSession();
     }
 
     // 3. Consultar al Cerebro Enrutador qué PDF enviarle a la IA para ayudarla a contestar
@@ -315,26 +408,44 @@ ipcMain.handle('chat:send', async (event, text) => {
     partsList.push({ text: text });
     const payload = partsList.length > 1 ? partsList : text;
 
-    // Ejecutar petición con reintentos para evitar errores 503 (Alta demanda)
+    // Ejecutar petición con reintentos y modelos de respaldo
     let response;
-    let retries = 3;
-    let delay = 2000;
-    while (retries > 0) {
-      try {
-        response = await chatSession.sendMessage({ message: payload });
-        break; // Éxito
-      } catch (err) {
-        const errorMsg = err.message ? err.message.toLowerCase() : "";
-        if (errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('unavailable') || errorMsg.includes('429') || errorMsg.includes('quota')) {
-          console.log(` > Límite de peticiones o Alta demanda. Reintentando en ${delay/1000}s... (${retries - 1} intentos restantes)`);
-          retries--;
-          if (retries === 0) throw err;
-          await new Promise(resolve => setTimeout(resolve, delay));
-          delay *= 2; // Exponential backoff
-        } else {
-          throw err;
+    let totalAttempts = 0;
+    const MAX_TOTAL_ATTEMPTS = 12; // máximo absoluto de intentos entre todos los modelos
+
+    while (totalAttempts < MAX_TOTAL_ATTEMPTS) {
+      let retries = 3;
+      let delay = 3000;
+      while (retries > 0 && totalAttempts < MAX_TOTAL_ATTEMPTS) {
+        try {
+          // Asegurar que chatSession existe
+          if (!chatSession) createChatSession();
+          response = await chatSession.sendMessage({ message: payload });
+          break; // Éxito
+        } catch (err) {
+          totalAttempts++;
+          const errorMsg = err.message ? err.message.toLowerCase() : "";
+          const isTransient = errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('unavailable') || errorMsg.includes('429') || errorMsg.includes('quota');
+          if (isTransient) {
+            retries--;
+            console.log(` > ${getCurrentModel()}: Alta demanda/cuota. Reintentando en ${delay/1000}s... (${retries} intentos con este modelo)`);
+            if (retries > 0) {
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay *= 2;
+            }
+          } else {
+            throw err; // Error no transitorio, no reintentar
+          }
         }
       }
+      // Si obtuvimos respuesta, salir del bucle exterior
+      if (response) break;
+      // Si no, intentar con el siguiente modelo de respaldo
+      if (!switchToNextModel()) {
+        // No quedan más modelos, lanzar error descriptivo
+        throw new Error('Todos los modelos de Gemini están saturados en este momento (503). Intenta de nuevo en unos minutos.');
+      }
+      createChatSession();
     }
 
     // Solo marcamos como inyectado si el envío fue exitoso
@@ -356,10 +467,10 @@ ipcMain.handle('chat:send', async (event, text) => {
         success: false,
         error: "Límite de tokens de la capa gratuita alcanzado. Por favor, espera entre 1 minuto y vuelve a intentarlo."
       };
-    } else if (errMsg.includes('503') || errMsg.includes('high demand')) {
+    } else if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('saturados')) {
        return {
          success: false,
-         error: "El servicio de Google Gemini se encuentra saturado en este momento (Alta demanda). Por favor, intenta de nuevo en unos segundos."
+         error: "Todos los modelos de Gemini están saturados en este momento. Por favor, espera 1-2 minutos y vuelve a intentarlo."
        };
     }
 
