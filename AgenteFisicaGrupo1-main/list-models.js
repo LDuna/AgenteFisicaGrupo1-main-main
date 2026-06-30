@@ -1,7 +1,16 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const path = require('path');
+const fs = require('fs');
+const apiKeyPath = path.join(__dirname, 'config', 'apikey.txt');
+let apiKey = '';
+if (fs.existsSync(apiKeyPath)) {
+  apiKey = fs.readFileSync(apiKeyPath, 'utf8').trim();
+}
+if (!apiKey) {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+  apiKey = process.env.API_KEY;
+}
 const { GoogleGenAI } = require('@google/genai');
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 async function listModels() {
   try {

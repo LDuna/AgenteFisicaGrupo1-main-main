@@ -132,6 +132,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 // Lista de modelos de respaldo en orden de preferencia.
 // Si el primero falla con 503/429, se prueba el siguiente.
 const FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
   'gemini-flash-latest',
   'gemini-2.0-flash',
   'gemini-2.5-flash-lite',
@@ -289,6 +293,15 @@ app.on('window-all-closed', function () {
 });
 
 // ==== ETAPA 2: CEREBRO CLASIFICADOR ====
+function normalizeStr(str) {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 async function clasificarPregunta(texto) {
   const pdfNames = Object.keys(availablePDFs);
   if (pdfNames.length === 0) return "NINGUNO";
@@ -296,12 +309,16 @@ async function clasificarPregunta(texto) {
   const routerPrompt = `Tenemos los siguientes documentos educativos de física disponibles en nuestra base de datos: 
 ${pdfNames.join("\n")}
 
-Ten en cuenta que los nombres de los archivos contienen abreviaturas de los temas (por ejemplo: 'RevDinCpoPtual' = Dinámica de Cuerpo Puntual, 'OscilaLibres' = Oscilaciones Libres, 'PmasCapitulo' = Problemas del Capítulo, etc). 
+Ten en cuenta que los nombres de los archivos contienen abreviaturas de los temas (por ejemplo: 'RevDinCpoPtual' = Dinámica de Cuerpo Puntual, 'OscilaLibres' = Oscilaciones Libres, 'PmasCapitulo' = Problemas del Capítulo, etc) y también guías de ejercicios específicas (ej. 'Guía 1 - Cinematica.pdf', 'Guía_2___Dinámica.pdf').
 
 Presta muchísima atención al siguiente mensaje del usuario: "${texto}"
 
-Analiza el tema físico de la pregunta o ejercicio y compáralo con las abreviaturas. ¿Cuál de los documentos mencionados es el MÁS indispensable y probable que contenga la teoría o fórmulas necesarias para ese tema en particular?
-Responde ÚNICAMENTE con el nombre exacto del archivo (ej. ${pdfNames[0]}), o "NINGUNO" si es solo un simple saludo, charla casual, o si la pregunta no amerita buscar guías.`;
+Instrucciones de enrutamiento:
+1. Si el usuario menciona explícitamente una guía, archivo o documento en particular (por ejemplo: "guía 2", "guía de dinámica", "Guía 1", "ejercicio de la guía 3"), debes elegir el archivo correspondiente a esa guía o documento.
+2. Si el usuario pregunta sobre un ejercicio o problema específico de una guía, prioriza siempre la guía de ejercicios correspondiente (por ejemplo, para un ejercicio de dinámica de la guía 2, prioriza 'Guía_2___Dinámica.pdf').
+3. Si es una pregunta teórica o conceptual general, busca el documento que contenga la teoría o fórmulas necesarias para ese tema.
+
+Responde ÚNICAMENTE con el nombre exacto del archivo (ej. ${pdfNames[0]}), o "NINGUNO" si es solo un simple saludo, charla casual, o si la pregunta no requiere consultar ninguna guía.`;
 
   // Intentar con cada modelo de respaldo
   for (let mi = currentModelIndex; mi < FALLBACK_MODELS.length; mi++) {
@@ -326,8 +343,13 @@ Responde ÚNICAMENTE con el nombre exacto del archivo (ej. ${pdfNames[0]}), o "N
           chatSessionModel = null;
           console.log(`  >> Router: modelo ${modelToTry} funcionó. Actualizando modelo principal.`);
         }
+
+        const normDoc = normalizeStr(docName);
         for (const name of pdfNames) {
-          if (docName.includes(name)) return name;
+          const normName = normalizeStr(name);
+          if (normDoc.includes(normName) || normName.includes(normDoc)) {
+            return name;
+          }
         }
         return "NINGUNO";
       } catch (e) {
